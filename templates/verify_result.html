@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>{% if ok %}Email confirmed{% else %}Invalid link{% endif %} — Bull's Eye</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a1020;
+    --ink: #e8ecf5;
+    --ink-dim: #8a94ad;
+    --accent: #25b95f;
+    --accent-glow: rgba(37, 185, 95, 0.25);
+    --danger: #ff6b6b;
+    --danger-glow: rgba(255, 107, 107, 0.2);
+    --line: rgba(138, 148, 173, 0.15);
+    --panel: rgba(17, 25, 50, 0.5);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Inter', sans-serif; min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ''; position: fixed;
+    width: 600px; height: 600px; border-radius: 50%;
+    background: radial-gradient(circle, {% if ok %}var(--accent-glow){% else %}var(--danger-glow){% endif %} 0%, transparent 65%);
+    filter: blur(80px); top: -200px; left: 50%; transform: translateX(-50%);
+    z-index: 0; pointer-events: none;
+  }
+  nav {
+    position: relative; z-index: 2;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 24px 48px; border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); }
+  .brand img { width: 38px; height: 38px; }
+  .brand-text { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; }
+  .brand-text .dot { color: var(--accent); }
+  main {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    padding: 60px 24px; min-height: calc(100vh - 85px);
+  }
+  .card {
+    width: 100%; max-width: 440px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 44px 36px; text-align: center;
+    animation: fadeUp 0.6s ease both;
+  }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  .icon {
+    width: 72px; height: 72px; margin: 0 auto 22px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px; font-weight: 600;
+    background: {% if ok %}rgba(37, 185, 95, 0.15){% else %}rgba(255, 107, 107, 0.15){% endif %};
+    color: {% if ok %}var(--accent){% else %}var(--danger){% endif %};
+  }
+  h1 {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 600;
+    font-size: 26px; margin-bottom: 12px; letter-spacing: -0.01em;
+  }
+  p { color: var(--ink-dim); font-size: 15px; line-height: 1.6; }
+  .cta {
+    display: inline-block; margin-top: 28px;
+    padding: 12px 26px; background: var(--accent); color: var(--bg);
+    text-decoration: none; font-weight: 600; font-size: 14px;
+    border-radius: 4px; transition: all 0.25s ease;
+  }
+  .cta:hover { box-shadow: 0 0 24px var(--accent-glow); transform: translateY(-1px); }
+  .ghost {
+    display: inline-block; margin-top: 28px;
+    padding: 12px 26px; background: transparent; color: var(--ink);
+    text-decoration: none; font-weight: 500; font-size: 14px;
+    border: 1px solid var(--line); border-radius: 4px;
+    transition: all 0.25s ease;
+  }
+  .ghost:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<nav>
+  <a href="{{ url_for('index') }}" class="brand">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="Bull's Eye Logo">
+    <span class="brand-text">BULL'S<span class="dot">.</span>EYE</span>
+  </a>
+</nav>
+<main>
+  <div class="card">
+    {% if ok %}
+      <div class="icon">✓</div>
+      <h1>Email confirmed</h1>
+      <p>Your account is active. You can log in now.</p>
+      <a href="{{ url_for('login') }}" class="cta">Log in</a>
+    {% else %}
+      <div class="icon">✕</div>
+      <h1>Invalid or expired link</h1>
+      <p>This confirmation link is not valid. It may have been used already or never existed.</p>
+      <a href="{{ url_for('signup') }}" class="ghost">Create account</a>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>
