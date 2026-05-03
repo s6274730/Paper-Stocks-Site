@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Log In — Bull's Eye</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a1020;
+    --ink: #e8ecf5;
+    --ink-dim: #8a94ad;
+    --accent: #25b95f;
+    --accent-glow: rgba(37, 185, 95, 0.25);
+    --line: rgba(138, 148, 173, 0.15);
+    --panel: rgba(17, 25, 50, 0.5);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 65%);
+    filter: blur(80px);
+    top: -200px;
+    right: -150px;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  nav {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 48px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .brand img {
+    width: 38px;
+    height: 38px;
+    transition: transform 0.3s ease;
+  }
+  .brand:hover img { transform: scale(1.05); }
+  .brand-text {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.01em;
+  }
+  .brand-text .dot { color: var(--accent); }
+
+  .back-link {
+    color: var(--ink-dim);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: color 0.2s;
+  }
+  .back-link:hover { color: var(--ink); }
+
+  main {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 24px;
+    min-height: calc(100vh - 85px);
+  }
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 40px 36px;
+    animation: fadeUp 0.6s ease both;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .card-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 28px;
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+    text-align: center;
+  }
+  .card-sub {
+    color: var(--ink-dim);
+    font-size: 14px;
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .field { margin-bottom: 18px; }
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-dim);
+    margin-bottom: 8px;
+  }
+  .field input {
+    width: 100%;
+    background: rgba(10, 16, 32, 0.6);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    padding: 12px 14px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .field input::placeholder { color: rgba(138, 148, 173, 0.4); }
+  .field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37, 185, 95, 0.1);
+  }
+
+  .submit-btn {
+    width: 100%;
+    padding: 13px 20px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: all 0.25s ease;
+  }
+  .submit-btn:hover {
+    box-shadow: 0 0 24px var(--accent-glow);
+    transform: translateY(-1px);
+  }
+
+  .divider {
+    text-align: center;
+    margin: 24px 0 18px;
+    color: var(--ink-dim);
+    font-size: 13px;
+    position: relative;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 35%;
+    height: 1px;
+    background: var(--line);
+  }
+  .divider::before { left: 0; }
+  .divider::after { right: 0; }
+
+  .create-cta {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 12px 20px;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 14px;
+    text-decoration: none;
+    transition: all 0.25s ease;
+  }
+  .create-cta:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  @media (max-width: 640px) {
+    nav { padding: 18px 20px; }
+    .card { padding: 32px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="{{ url_for('index') }}" class="brand">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="Bull's Eye Logo">
+    <span class="brand-text">BULL'S<span class="dot">.</span>EYE</span>
+  </a>
+  <a href="{{ url_for('index') }}" class="back-link">← Home</a>
+</nav>
+
+<main>
+  <div class="card">
+    <h1 class="card-title">Log In</h1>
+    <p class="card-sub">Welcome back.</p>
+
+    <form onsubmit="event.preventDefault(); handleLogin();">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Enter your username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter your password" autocomplete="current-password" required>
+      </div>
+
+      <button type="submit" class="submit-btn">Log In</button>
+    </form>
+
+    <div class="divider">new here?</div>
+
+    <a href="{{ url_for('signup') }}" class="create-cta">Create an account</a>
+  </div>
+</main>
+
+<script>
+  function handleLogin() {
+    const btn = document.querySelector('.submit-btn');
+    const original = btn.textContent;
+    btn.textContent = 'Logging in…';
+    btn.style.pointerEvents = 'none';
+    setTimeout(() => {
+      btn.textContent = '✓ Success';
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.style.pointerEvents = '';
+      }, 1000);
+    }, 800);
+  }
+</script>
+
+</body>
+</html>

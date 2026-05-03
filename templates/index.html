@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Bull's Eye</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a1020;
+    --ink: #e8ecf5;
+    --ink-dim: #8a94ad;
+    --accent: #25b95f;
+    --accent-glow: rgba(37, 185, 95, 0.25);
+    --line: rgba(138, 148, 173, 0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Soft glow backdrop */
+  body::before {
+    content: '';
+    position: fixed;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 65%);
+    filter: blur(80px);
+    top: -200px;
+    right: -150px;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  nav {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 48px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .brand img {
+    width: 38px;
+    height: 38px;
+    transition: transform 0.3s ease;
+  }
+  .brand:hover img { transform: scale(1.05); }
+  .brand-text {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.01em;
+  }
+  .brand-text .dot { color: var(--accent); }
+
+  .nav-links a {
+    color: var(--ink-dim);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--ink); }
+
+  main {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 120px 32px 60px;
+    text-align: center;
+  }
+
+  .logo-hero {
+    width: 140px;
+    height: 140px;
+    margin: 0 auto 40px;
+    display: block;
+    animation: fadeIn 0.8s ease both, float 5s ease-in-out 0.8s infinite;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(40px, 6vw, 68px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin-bottom: 20px;
+    animation: fadeUp 0.8s 0.2s ease both;
+  }
+  h1 .accent { color: var(--accent); }
+
+  .subtitle {
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--ink-dim);
+    max-width: 520px;
+    margin: 0 auto 48px;
+    animation: fadeUp 0.8s 0.35s ease both;
+  }
+
+  .actions {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+    animation: fadeUp 0.8s 0.5s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 28px;
+    border-radius: 3px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    transition: all 0.25s ease;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .btn-primary:hover {
+    box-shadow: 0 0 24px var(--accent-glow);
+    transform: translateY(-2px);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .btn-ghost:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  @media (max-width: 640px) {
+    nav { padding: 18px 20px; }
+    main { padding: 70px 20px 40px; }
+    .logo-hero { width: 110px; height: 110px; margin-bottom: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="{{ url_for('index') }}" class="brand">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="Bull's Eye Logo">
+    <span class="brand-text">BULL'S<span class="dot">.</span>EYE</span>
+  </a>
+  <div class="nav-links">
+    <a href="{{ url_for('login') }}">Log In</a>
+  </div>
+</nav>
+
+<main>
+  <img src="{{ url_for('static', filename='logo.png') }}" alt="Bull's Eye Logo" class="logo-hero">
+  <h1>Welcome to <span class="accent">Bull's Eye.</span></h1>
+  <p class="subtitle">
+    A simple, modern platform for tracking the markets.
+  </p>
+  <div class="actions">
+    <a href="{{ url_for('login') }}" class="btn btn-primary">Log In</a>
+    <a href="{{ url_for('signup') }}" class="btn btn-ghost">Create Account</a>
+  </div>
+</main>
+
+</body>
+</html>
