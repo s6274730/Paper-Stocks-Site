@@ -4,6 +4,7 @@ import secrets
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 import smtp
+import stocks
 app = Flask(__name__)
 app.secret_key = "jcz"
 DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
@@ -88,6 +89,32 @@ def home():
     if "user_id" not in session:
         return redirect(url_for("login"))
     return render_template("home.html", name=session.get("user_name"))
+
+
+@app.route("/search")
+def search():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    ticker = request.args.get("ticker", "").strip()
+    result = None
+    error = None
+
+    if ticker:
+        try:
+            result = stocks.get_price(ticker)
+            if result is None:
+                error = f"No price found for '{ticker.upper()}'."
+        except Exception as e:
+            error = f"Lookup failed: {e}"
+
+    return render_template(
+        "search.html",
+        name=session.get("user_name"),
+        ticker=ticker,
+        result=result,
+        error=error,
+    )
 
 
 @app.route("/signup", methods=["GET", "POST"])
