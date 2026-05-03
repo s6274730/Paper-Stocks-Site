@@ -204,6 +204,17 @@
     color: var(--accent);
   }
 
+  .flash {
+    background: rgba(220, 80, 80, 0.12);
+    border: 1px solid rgba(220, 80, 80, 0.4);
+    color: #ff8a8a;
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-bottom: 18px;
+    text-align: center;
+  }
+
   @media (max-width: 640px) {
     nav { padding: 18px 20px; }
     .card { padding: 32px 24px; }
@@ -225,14 +236,20 @@
     <h1 class="card-title">Log In</h1>
     <p class="card-sub">Welcome back.</p>
 
-    <form onsubmit="event.preventDefault(); handleLogin();">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">{{ messages[0] }}</div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('login') }}">
       <div class="field">
-        <label for="username">Username</label>
-        <input type="text" id="username" placeholder="Enter your username" autocomplete="username" required>
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" required>
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input type="password" id="password" placeholder="Enter your password" autocomplete="current-password" required>
+        <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
       </div>
 
       <button type="submit" class="submit-btn">Log In</button>
@@ -243,22 +260,6 @@
     <a href="{{ url_for('signup') }}" class="create-cta">Create an account</a>
   </div>
 </main>
-
-<script>
-  function handleLogin() {
-    const btn = document.querySelector('.submit-btn');
-    const original = btn.textContent;
-    btn.textContent = 'Logging in…';
-    btn.style.pointerEvents = 'none';
-    setTimeout(() => {
-      btn.textContent = '✓ Success';
-      setTimeout(() => {
-        btn.textContent = original;
-        btn.style.pointerEvents = '';
-      }, 1000);
-    }, 800);
-  }
-</script>
 
 </body>
 </html>

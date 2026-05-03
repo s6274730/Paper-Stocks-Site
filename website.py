@@ -1,11 +1,10 @@
 import hashlib
 import os
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 
 app = Flask(__name__)
-app.secret_key = "change-me-in-production"
-
+app.secret_key = "jcz"
 DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
 
 
@@ -30,7 +29,7 @@ def init_db():
         )
 
 
-def hash_password(password: str) -> str:
+def hash_password(password):
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
@@ -39,9 +38,44 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/login")
+@app.route("/login", methods=["GET", "POST"])
 def login():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+
+        if not (email and password):
+            flash("Email and password required.")
+            return redirect(url_for("login"))
+
+        with get_db() as conn:
+            user = conn.execute(
+                "SELECT id, name, password_hash FROM users WHERE email = ?",
+                (email,),
+            ).fetchone()
+
+        if user is None or user["password_hash"] != hash_password(password):
+            flash("Invalid email or password.")
+            return redirect(url_for("login"))
+
+        session["user_id"] = user["id"]
+        session["user_name"] = user["name"]
+        return redirect(url_for("home"))
+
     return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("index"))
+
+
+@app.route("/home")
+def home():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    return render_template("home.html", name=session.get("user_name"))
 
 
 @app.route("/signup", methods=["GET", "POST"])
