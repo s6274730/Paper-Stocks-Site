@@ -31,11 +31,6 @@ def init_db():
             )
             """
         )
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
-        if "is_verified" not in existing:
-            conn.execute("ALTER TABLE users ADD COLUMN is_verified INTEGER NOT NULL DEFAULT 0")
-        if "verification_token" not in existing:
-            conn.execute("ALTER TABLE users ADD COLUMN verification_token TEXT")
 
 
 def hash_password(password):

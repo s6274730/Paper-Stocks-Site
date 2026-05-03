@@ -2,7 +2,6 @@ import yfinance as yf
 
 
 def get_price(ticker):
-    print(ticker)
     ticker = ticker.strip().upper()
     if not ticker:
         return None
