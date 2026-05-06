@@ -25,16 +25,20 @@ def init_db():
                 name TEXT NOT NULL,
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
                 birthdate TEXT NOT NULL,
                 is_verified INTEGER NOT NULL DEFAULT 0,
                 verification_token TEXT
             )
             """
         )
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "salt" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN salt TEXT NOT NULL DEFAULT ''")
 
 
-def hash_password(password):
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+def hash_password(password, salt):
+    return hashlib.sha256(salt + password.encode("utf-8")).hexdigest()
 
 
 @app.route("/")
@@ -54,11 +58,11 @@ def login():
 
         with get_db() as conn:
             user = conn.execute(
-                "SELECT id, name, password_hash, is_verified FROM users WHERE email = ?",
+                "SELECT id, name, password_hash, salt, is_verified FROM users WHERE email = ?",
                 (email,),
             ).fetchone()
 
-        if user is None or user["password_hash"] != hash_password(password):
+        if user is None or not user["salt"] or user["password_hash"] != hash_password(password, bytes.fromhex(user["salt"])):
             flash("Invalid email or password.")
             return redirect(url_for("login"))
 
@@ -124,15 +128,16 @@ def signup():
             flash("All fields are required.")
             return redirect(url_for("signup"))
 
-        password_hash = hash_password(password)
+        salt = os.urandom(16)
+        password_hash = hash_password(password, salt)
         token = secrets.token_urlsafe(32)
 
         try:
             with get_db() as conn:
                 cursor = conn.execute(
-                    "INSERT INTO users (name, email, password_hash, birthdate, is_verified, verification_token) "
-                    "VALUES (?, ?, ?, ?, 0, ?)",
-                    (name, email, password_hash, birthdate, token),
+                    "INSERT INTO users (name, email, password_hash, salt, birthdate, is_verified, verification_token) "
+                    "VALUES (?, ?, ?, ?, ?, 0, ?)",
+                    (name, email, password_hash, salt.hex(), birthdate, token),
                 )
                 user_id = cursor.lastrowid
         except sqlite3.IntegrityError:
