@@ -5,6 +5,7 @@ import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 import smtp
 import stocks
+import wallet
 app = Flask(__name__)
 app.secret_key = "jcz"
 DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
@@ -107,12 +108,78 @@ def search():
         except Exception as e:
             error = f"Lookup failed: {e}"
 
+    wallet.ensure_wallet(session["user_id"])
+    w = wallet.get_wallet(session["user_id"])
     return render_template(
         "search.html",
         name=session.get("user_name"),
         ticker=ticker,
         result=result,
         error=error,
+        balance=w["balance_usd"] if w else 0.0,
+    )
+
+
+@app.route("/buy", methods=["POST"])
+def buy():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    ticker = request.form.get("ticker", "").strip()
+    amount_raw = request.form.get("amount", "").strip()
+
+    try:
+        amount = float(amount_raw)
+    except ValueError:
+        flash("Enter a valid USD amount.")
+        return redirect(url_for("search", ticker=ticker))
+
+    try:
+        price_info = stocks.get_price(ticker)
+    except Exception as e:
+        flash(f"Price lookup failed: {e}")
+        return redirect(url_for("search", ticker=ticker))
+
+    if price_info is None:
+        flash(f"No price for '{ticker.upper()}'.")
+        return redirect(url_for("search", ticker=ticker))
+
+    wallet.ensure_wallet(session["user_id"])
+    ok, msg = wallet.buy(session["user_id"], ticker, amount, price_info["price"])
+    flash(msg)
+    return redirect(url_for("wallet_page") if ok else url_for("search", ticker=ticker))
+
+
+@app.route("/wallet")
+def wallet_page():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    wallet.ensure_wallet(session["user_id"])
+    w = wallet.get_wallet(session["user_id"])
+    holdings = wallet.get_holdings(session["user_id"])
+
+    enriched = []
+    total_value = 0.0
+    for h in holdings:
+        current_price = None
+        try:
+            info = stocks.get_price(h["ticker"])
+            if info:
+                current_price = info["price"]
+        except Exception:
+            current_price = None
+        market_value = (current_price * h["shares"]) if current_price else None
+        if market_value is not None:
+            total_value += market_value
+        enriched.append({**h, "current_price": current_price, "market_value": market_value})
+
+    return render_template(
+        "wallet.html",
+        name=session.get("user_name"),
+        balance=w["balance_usd"] if w else 0.0,
+        holdings=enriched,
+        total_value=total_value,
     )
 
 
@@ -143,6 +210,8 @@ def signup():
         except sqlite3.IntegrityError:
             flash("Email already registered.")
             return redirect(url_for("signup"))
+
+        wallet.create_wallet(user_id)
 
         link = url_for("verify", token=token, _external=True)
         try:
@@ -176,4 +245,5 @@ def verify(token):
 
 if __name__ == "__main__":
     init_db()
+    wallet.init_db()
     app.run(debug=True)

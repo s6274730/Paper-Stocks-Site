@@ -135,6 +135,65 @@
     font-size: 14px;
   }
 
+  .flash {
+    background: rgba(37, 185, 95, 0.08);
+    border: 1px solid rgba(37, 185, 95, 0.35);
+    color: var(--accent);
+    padding: 14px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 18px;
+  }
+
+  .balance-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    font-size: 14px;
+  }
+  .balance-bar .label { color: var(--ink-dim); }
+  .balance-bar .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600; color: var(--accent);
+  }
+
+  .buy-form {
+    margin-top: 22px;
+    display: flex; gap: 10px; align-items: center;
+  }
+  .buy-form input {
+    flex: 1;
+    background: rgba(10, 16, 32, 0.6);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    padding: 12px 14px; border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .buy-form input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37, 185, 95, 0.1);
+  }
+  .buy-form button {
+    padding: 0 22px; height: 44px;
+    background: var(--accent); color: var(--bg);
+    border: none; border-radius: 4px;
+    font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
+    cursor: pointer; transition: all 0.25s ease;
+  }
+  .buy-form button:hover {
+    box-shadow: 0 0 24px var(--accent-glow);
+    transform: translateY(-1px);
+  }
+  .buy-label {
+    color: var(--ink-dim); font-size: 13px; margin-top: 22px;
+  }
+
   @media (max-width: 640px) {
     nav { padding: 18px 20px; }
     main { padding: 40px 20px; }
@@ -152,11 +211,25 @@
   </a>
   <div class="nav-right">
     <a href="{{ url_for('home') }}">Home</a>
+    <a href="{{ url_for('wallet_page') }}">Wallet</a>
     <a href="{{ url_for('logout') }}">Log out</a>
   </div>
 </nav>
 
 <main>
+  <div class="balance-bar">
+    <span class="label">Cash balance</span>
+    <span class="value">${{ "{:,.2f}".format(balance) }}</span>
+  </div>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}
+        <div class="flash">{{ m }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
   <h1>Look up a stock</h1>
   <p class="lede">Enter a ticker symbol to see its current price.</p>
 
@@ -171,6 +244,13 @@
       <div>
         <span class="price">{{ "%.2f"|format(result.price) }}</span><span class="currency">{{ result.currency }}</span>
       </div>
+
+      <div class="buy-label">Buy {{ result.ticker }} — enter USD amount</div>
+      <form class="buy-form" method="POST" action="{{ url_for('buy') }}">
+        <input type="hidden" name="ticker" value="{{ result.ticker }}">
+        <input type="number" name="amount" step="0.01" min="0.01" placeholder="USD amount" required>
+        <button type="submit">Buy</button>
+      </form>
     </div>
   {% elif error %}
     <div class="error">{{ error }}</div>

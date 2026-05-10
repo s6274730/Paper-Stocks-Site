@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Wallet — Bull's Eye</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a1020;
+    --ink: #e8ecf5;
+    --ink-dim: #8a94ad;
+    --accent: #25b95f;
+    --accent-glow: rgba(37, 185, 95, 0.25);
+    --danger: #ff6b6b;
+    --line: rgba(138, 148, 173, 0.15);
+    --panel: rgba(17, 25, 50, 0.5);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Inter', sans-serif; min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ''; position: fixed;
+    width: 700px; height: 700px; border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 65%);
+    filter: blur(90px); top: -250px; left: 50%; transform: translateX(-50%);
+    z-index: 0; pointer-events: none;
+  }
+  nav {
+    position: relative; z-index: 2;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 24px 48px; border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); }
+  .brand img { width: 38px; height: 38px; }
+  .brand-text { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; }
+  .brand-text .dot { color: var(--accent); }
+  .nav-right { display: flex; align-items: center; gap: 22px; }
+  .nav-right a {
+    color: var(--ink-dim); text-decoration: none; font-size: 14px;
+    font-weight: 500; transition: color 0.2s;
+  }
+  .nav-right a:hover { color: var(--accent); }
+
+  main {
+    position: relative; z-index: 1;
+    max-width: 960px; margin: 0 auto;
+    padding: 60px 32px 60px;
+  }
+  h1 {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  .lede { color: var(--ink-dim); font-size: 16px; margin-bottom: 36px; }
+
+  .summary {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px; margin-bottom: 36px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 22px 24px;
+  }
+  .stat .label {
+    color: var(--ink-dim); font-size: 13px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 10px;
+  }
+  .stat .value {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700; font-size: 28px;
+    letter-spacing: -0.01em;
+  }
+  .stat.cash .value { color: var(--accent); }
+
+  .flash {
+    background: rgba(37, 185, 95, 0.08);
+    border: 1px solid rgba(37, 185, 95, 0.35);
+    color: var(--accent);
+    padding: 14px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 22px;
+  }
+
+  table.holdings {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  table.holdings th, table.holdings td {
+    padding: 14px 18px; text-align: left;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  table.holdings th {
+    color: var(--ink-dim);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 12px;
+    background: rgba(10, 16, 32, 0.4);
+  }
+  table.holdings td.num {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    text-align: right;
+  }
+  table.holdings th.num { text-align: right; }
+  table.holdings tr:last-child td { border-bottom: none; }
+  table.holdings tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+  .empty {
+    background: var(--panel);
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--ink-dim);
+    font-size: 15px;
+  }
+  .empty a { color: var(--accent); text-decoration: none; font-weight: 600; }
+
+  @media (max-width: 640px) {
+    nav { padding: 18px 20px; }
+    main { padding: 40px 20px; }
+    table.holdings th, table.holdings td { padding: 10px 12px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<nav>
+  <a href="{{ url_for('home') }}" class="brand">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="Bull's Eye Logo">
+    <span class="brand-text">BULL'S<span class="dot">.</span>EYE</span>
+  </a>
+  <div class="nav-right">
+    <a href="{{ url_for('home') }}">Home</a>
+    <a href="{{ url_for('search') }}">Search</a>
+    <a href="{{ url_for('logout') }}">Log out</a>
+  </div>
+</nav>
+
+<main>
+  <h1>Wallet</h1>
+  <p class="lede">Your cash balance and current positions, {{ name }}.</p>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}
+        <div class="flash">{{ m }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="summary">
+    <div class="stat cash">
+      <div class="label">Cash</div>
+      <div class="value">${{ "{:,.2f}".format(balance) }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Holdings value</div>
+      <div class="value">${{ "{:,.2f}".format(total_value) }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Total</div>
+      <div class="value">${{ "{:,.2f}".format(balance + total_value) }}</div>
+    </div>
+  </div>
+
+  {% if holdings %}
+    <table class="holdings">
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th class="num">Shares</th>
+          <th class="num">Avg cost</th>
+          <th class="num">Cost basis</th>
+          <th class="num">Current price</th>
+          <th class="num">Market value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in holdings %}
+        <tr>
+          <td>{{ h.ticker }}</td>
+          <td class="num">{{ "%.6f"|format(h.shares) }}</td>
+          <td class="num">${{ "{:,.2f}".format(h.avg_price) }}</td>
+          <td class="num">${{ "{:,.2f}".format(h.cost_basis_usd) }}</td>
+          <td class="num">{% if h.current_price %}${{ "{:,.2f}".format(h.current_price) }}{% else %}—{% endif %}</td>
+          <td class="num">{% if h.market_value %}${{ "{:,.2f}".format(h.market_value) }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">
+      No positions yet. <a href="{{ url_for('search') }}">Find a stock</a> to start.
+    </div>
+  {% endif %}
+</main>
+</body>
+</html>
