@@ -33,9 +33,6 @@ def init_db():
             )
             """
         )
-        cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
-        if "salt" not in cols:
-            conn.execute("ALTER TABLE users ADD COLUMN salt TEXT NOT NULL DEFAULT ''")
 
 
 def hash_password(password, salt):
