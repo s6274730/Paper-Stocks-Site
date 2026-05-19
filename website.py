@@ -3,40 +3,89 @@ import os
 import secrets
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-import smtp
-import stocks
-import wallet
-app = Flask(__name__)
-app.secret_key = "jcz"
+from smtp import Mailer
+from stocks import StockService
+from wallet import WalletService
+
+
+class UserRepository:
+    def __init__(self, db_path):
+        self.db_path = db_path
+
+    def get_db(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def init_db(self):
+        with self.get_db() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    salt TEXT NOT NULL,
+                    birthdate TEXT NOT NULL,
+                    is_verified INTEGER NOT NULL DEFAULT 0,
+                    verification_token TEXT
+                )
+                """
+            )
+
+    @staticmethod
+    def hash_password(password, salt):
+        return hashlib.sha256(salt + password.encode("utf-8")).hexdigest()
+
+    def find_by_email(self, email):
+        with self.get_db() as conn:
+            return conn.execute(
+                "SELECT id, name, password_hash, salt, is_verified FROM users WHERE email = ?",
+                (email,),
+            ).fetchone()
+
+    def create(self, name, email, password, birthdate):
+        salt = os.urandom(16)
+        password_hash = self.hash_password(password, salt)
+        token = secrets.token_urlsafe(32)
+        with self.get_db() as conn:
+            cursor = conn.execute(
+                "INSERT INTO users (name, email, password_hash, salt, birthdate, is_verified, verification_token) "
+                "VALUES (?, ?, ?, ?, ?, 0, ?)",
+                (name, email, password_hash, salt.hex(), birthdate, token),
+            )
+            user_id = cursor.lastrowid
+        return user_id, token
+
+    def delete(self, user_id):
+        with self.get_db() as conn:
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+    def verify_token(self, token):
+        with self.get_db() as conn:
+            user = conn.execute(
+                "SELECT id FROM users WHERE verification_token = ? AND is_verified = 0",
+                (token,),
+            ).fetchone()
+            if user is None:
+                return False
+            conn.execute(
+                "UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?",
+                (user["id"],),
+            )
+        return True
+
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
 
+app = Flask(__name__)
+app.secret_key = "jcz"
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    with get_db() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                salt TEXT NOT NULL,
-                birthdate TEXT NOT NULL,
-                is_verified INTEGER NOT NULL DEFAULT 0,
-                verification_token TEXT
-            )
-            """
-        )
-
-
-def hash_password(password, salt):
-    return hashlib.sha256(salt + password.encode("utf-8")).hexdigest()
+users_repo = UserRepository(DB_PATH)
+wallet_service = WalletService(DB_PATH)
+stock_service = StockService()
+mailer = Mailer()
 
 
 @app.route("/")
@@ -54,13 +103,9 @@ def login():
             flash("Email and password required.")
             return redirect(url_for("login"))
 
-        with get_db() as conn:
-            user = conn.execute(
-                "SELECT id, name, password_hash, salt, is_verified FROM users WHERE email = ?",
-                (email,),
-            ).fetchone()
+        user = users_repo.find_by_email(email)
 
-        if user is None or not user["salt"] or user["password_hash"] != hash_password(password, bytes.fromhex(user["salt"])):
+        if user is None or not user["salt"] or user["password_hash"] != UserRepository.hash_password(password, bytes.fromhex(user["salt"])):
             flash("Invalid email or password.")
             return redirect(url_for("login"))
 
@@ -101,24 +146,24 @@ def search():
 
     if ticker:
         try:
-            result = stocks.get_price(ticker)
+            result = stock_service.get_price(ticker)
             if result is None:
                 error = f"No price found for '{ticker.upper()}'."
             else:
                 try:
-                    history = stocks.get_history(ticker, period=period)
+                    history = stock_service.get_history(ticker, period=period)
                 except Exception:
                     history = None
         except Exception as e:
             error = f"Lookup failed: {e}"
 
-    wallet.ensure_wallet(session["user_id"])
-    w = wallet.get_wallet(session["user_id"])
+    wallet_service.ensure_wallet(session["user_id"])
+    w = wallet_service.get_wallet(session["user_id"])
     shares_owned = 0.0
     transactions = []
     if result:
-        shares_owned = wallet.get_shares(session["user_id"], result["ticker"])
-        transactions = wallet.get_transactions(session["user_id"], result["ticker"])
+        shares_owned = wallet_service.get_shares(session["user_id"], result["ticker"])
+        transactions = wallet_service.get_transactions(session["user_id"], result["ticker"])
     return render_template(
         "search.html",
         name=session.get("user_name"),
@@ -148,7 +193,7 @@ def buy():
         return redirect(url_for("search", ticker=ticker))
 
     try:
-        price_info = stocks.get_price(ticker)
+        price_info = stock_service.get_price(ticker)
     except Exception as e:
         flash(f"Price lookup failed: {e}")
         return redirect(url_for("search", ticker=ticker))
@@ -157,8 +202,8 @@ def buy():
         flash(f"No price for '{ticker.upper()}'.")
         return redirect(url_for("search", ticker=ticker))
 
-    wallet.ensure_wallet(session["user_id"])
-    ok, msg = wallet.buy(session["user_id"], ticker, amount, price_info["price"])
+    wallet_service.ensure_wallet(session["user_id"])
+    ok, msg = wallet_service.buy(session["user_id"], ticker, amount, price_info["price"])
     flash(msg)
     return redirect(url_for("wallet_page") if ok else url_for("search", ticker=ticker))
 
@@ -178,7 +223,7 @@ def sell():
         return redirect(url_for("wallet_page"))
 
     if shares_raw.lower() == "all":
-        shares = wallet.get_shares(session["user_id"], ticker)
+        shares = wallet_service.get_shares(session["user_id"], ticker)
     else:
         try:
             shares = float(shares_raw)
@@ -187,7 +232,7 @@ def sell():
             return back()
 
     try:
-        price_info = stocks.get_price(ticker)
+        price_info = stock_service.get_price(ticker)
     except Exception as e:
         flash(f"Price lookup failed: {e}")
         return back()
@@ -196,7 +241,7 @@ def sell():
         flash(f"No price for '{ticker.upper()}'.")
         return back()
 
-    ok, msg = wallet.sell(session["user_id"], ticker, shares, price_info["price"])
+    ok, msg = wallet_service.sell(session["user_id"], ticker, shares, price_info["price"])
     flash(msg)
     return back()
 
@@ -206,16 +251,16 @@ def wallet_page():
     if "user_id" not in session:
         return redirect(url_for("login"))
 
-    wallet.ensure_wallet(session["user_id"])
-    w = wallet.get_wallet(session["user_id"])
-    holdings = wallet.get_holdings(session["user_id"])
+    wallet_service.ensure_wallet(session["user_id"])
+    w = wallet_service.get_wallet(session["user_id"])
+    holdings = wallet_service.get_holdings(session["user_id"])
 
     enriched = []
     total_value = 0.0
     for h in holdings:
         current_price = None
         try:
-            info = stocks.get_price(h["ticker"])
+            info = stock_service.get_price(h["ticker"])
             if info:
                 current_price = info["price"]
         except Exception:
@@ -246,30 +291,19 @@ def signup():
             flash("All fields are required.")
             return redirect(url_for("signup"))
 
-        salt = os.urandom(16)
-        password_hash = hash_password(password, salt)
-        token = secrets.token_urlsafe(32)
-
         try:
-            with get_db() as conn:
-                cursor = conn.execute(
-                    "INSERT INTO users (name, email, password_hash, salt, birthdate, is_verified, verification_token) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?)",
-                    (name, email, password_hash, salt.hex(), birthdate, token),
-                )
-                user_id = cursor.lastrowid
+            user_id, token = users_repo.create(name, email, password, birthdate)
         except sqlite3.IntegrityError:
             flash("Email already registered.")
             return redirect(url_for("signup"))
 
-        wallet.create_wallet(user_id)
+        wallet_service.create_wallet(user_id)
 
         link = url_for("verify", token=token, _external=True)
         try:
-            smtp.send_verification(email, name, link)
+            mailer.send_verification(email, name, link)
         except Exception as e:
-            with get_db() as conn:
-                conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            users_repo.delete(user_id)
             flash(f"Could not send confirmation email: {e}")
             return redirect(url_for("signup"))
 
@@ -280,21 +314,11 @@ def signup():
 
 @app.route("/verify/<token>")
 def verify(token):
-    with get_db() as conn:
-        user = conn.execute(
-            "SELECT id FROM users WHERE verification_token = ? AND is_verified = 0",
-            (token,),
-        ).fetchone()
-        if user is None:
-            return render_template("verify_result.html", ok=False)
-        conn.execute(
-            "UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?",
-            (user["id"],),
-        )
-    return render_template("verify_result.html", ok=True)
+    ok = users_repo.verify_token(token)
+    return render_template("verify_result.html", ok=ok)
 
 
 if __name__ == "__main__":
-    init_db()
-    wallet.init_db()
+    users_repo.init_db()
+    wallet_service.init_db()
     app.run(debug=True)
