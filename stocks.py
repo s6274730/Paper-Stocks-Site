@@ -17,17 +17,34 @@ def get_price(ticker):
     }
 
 
+PERIOD_INTERVAL = {
+    "1h":  ("1d",  "1m"),
+    "1d":  ("1d",  "5m"),
+    "1w":  ("5d",  "30m"),
+    "1mo": ("1mo", "1d"),
+    "3mo": ("3mo", "1d"),
+    "6mo": ("6mo", "1d"),
+    "1y":  ("1y",  "1d"),
+    "5y":  ("5y",  "1wk"),
+}
+
+
 def get_history(ticker, period="1y"):
     ticker = ticker.strip().upper()
     if not ticker:
         return None
-    hist = yf.Ticker(ticker).history(period=period)
+    yf_period, interval = PERIOD_INTERVAL.get(period, ("1y", "1d"))
+    hist = yf.Ticker(ticker).history(period=yf_period, interval=interval)
     if hist.empty:
         return None
-    interval_fmt = "%H:%M" if period in ("1d", "5d") else "%Y-%m-%d"
-    labels = [d.strftime(interval_fmt) for d in hist.index]
+    if period == "1h":
+        hist = hist.tail(60)
+    intraday = interval.endswith("m") or interval.endswith("h")
+    fmt = "%H:%M" if intraday else "%Y-%m-%d"
+    labels = [d.strftime(fmt) for d in hist.index]
     closes = [float(c) for c in hist["Close"].tolist()]
-    return {"labels": labels, "closes": closes}
+    times = [int(d.timestamp() * 1000) for d in hist.index]
+    return {"labels": labels, "closes": closes, "times": times, "intraday": intraday}
 
 
 if __name__ == "__main__":

@@ -247,6 +247,20 @@
     height: 260px;
     width: 100%;
   }
+  .trade-legend {
+    display: flex; gap: 18px; justify-content: center;
+    margin-top: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--ink-dim);
+  }
+  .trade-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .trade-legend .dot-buy, .trade-legend .dot-sell {
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 8px solid var(--accent);
+  }
+  .trade-legend .dot-sell { border-bottom-color: var(--danger); }
   .chart-empty {
     color: var(--ink-dim);
     font-size: 13px;
@@ -309,7 +323,7 @@
         <div class="chart-header">
           <span class="chart-title">Price history</span>
           <div class="period-tabs">
-            {% for p, label in [('1mo','1M'),('3mo','3M'),('6mo','6M'),('1y','1Y'),('5y','5Y')] %}
+            {% for p, label in [('1h','1H'),('1d','1D'),('1w','1W'),('1mo','1M'),('3mo','3M'),('6mo','6M'),('1y','1Y'),('5y','5Y')] %}
               <a href="{{ url_for('search', ticker=result.ticker, period=p) }}"
                  class="{% if period == p %}active{% endif %}">{{ label }}</a>
             {% endfor %}
@@ -317,6 +331,12 @@
         </div>
         {% if history %}
           <div class="chart-box"><canvas id="priceChart"></canvas></div>
+          {% if transactions %}
+          <div class="trade-legend">
+            <span><span class="dot-buy"></span>Buy</span>
+            <span><span class="dot-sell"></span>Sell</span>
+          </div>
+          {% endif %}
         {% else %}
           <div class="chart-empty">No history available.</div>
         {% endif %}
@@ -354,6 +374,9 @@
       (function () {
         const labels = {{ history.labels | tojson }};
         const closes = {{ history.closes | tojson }};
+        const times = {{ history.times | tojson }};
+        const intraday = {{ history.intraday | tojson }};
+        const transactions = {{ transactions | tojson }};
         const ctx = document.getElementById('priceChart').getContext('2d');
         const first = closes[0];
         const last = closes[closes.length - 1];
@@ -364,6 +387,60 @@
         const gradient = ctx.createLinearGradient(0, 0, 0, 260);
         gradient.addColorStop(0, fill);
         gradient.addColorStop(1, 'rgba(10, 16, 32, 0)');
+
+        const buyData = new Array(labels.length).fill(null);
+        const sellData = new Array(labels.length).fill(null);
+        const buyMeta = new Array(labels.length).fill(null);
+        const sellMeta = new Array(labels.length).fill(null);
+        const intervalMs = times.length > 1 ? (times[1] - times[0]) : 86400000;
+        const tolerance = Math.max(intervalMs, 60000);
+        const firstMs = times[0];
+        const lastMs = times[times.length - 1];
+        for (const t of transactions) {
+          if (!t.created_at) continue;
+          const txnMs = Date.parse(t.created_at.replace(' ', 'T') + 'Z');
+          if (isNaN(txnMs)) continue;
+          if (txnMs < firstMs - tolerance) continue;
+          let i;
+          if (txnMs >= lastMs) {
+            i = times.length - 1;
+          } else {
+            let best = 0, bestDiff = Infinity;
+            for (let k = 0; k < times.length; k++) {
+              const diff = Math.abs(times[k] - txnMs);
+              if (diff < bestDiff) { bestDiff = diff; best = k; }
+            }
+            if (bestDiff > tolerance * 2) continue;
+            i = best;
+          }
+          if (t.side === 'BUY') {
+            buyData[i] = t.price;
+            buyMeta[i] = { shares: t.shares, usd: t.usd_amount };
+          } else if (t.side === 'SELL') {
+            sellData[i] = t.price;
+            sellMeta[i] = { shares: t.shares, usd: t.usd_amount };
+          }
+        }
+
+        if (intraday) {
+          const refreshMs = {{ '30000' if period == '1h' else '60000' }};
+          setTimeout(() => location.reload(), refreshMs);
+        }
+
+        const markerDataset = (data, fillColor, pointStyle) => ({
+          type: 'line',
+          data: data,
+          borderColor: 'transparent',
+          backgroundColor: fillColor,
+          pointBorderColor: '#0a1020',
+          pointBorderWidth: 2,
+          pointStyle: pointStyle,
+          pointRadius: 7,
+          pointHoverRadius: 9,
+          showLine: false,
+          spanGaps: false,
+          order: 0,
+        });
 
         new Chart(ctx, {
           type: 'line',
@@ -381,7 +458,11 @@
               pointHoverBackgroundColor: color,
               pointHoverBorderColor: '#0a1020',
               pointHoverBorderWidth: 2,
-            }]
+              order: 1,
+            },
+            markerDataset(buyData, '#25b95f', 'triangle'),
+            markerDataset(sellData, '#ff6b6b', 'triangle'),
+            ]
           },
           options: {
             responsive: true,
@@ -399,8 +480,19 @@
                 bodyFont: { family: 'JetBrains Mono', size: 13, weight: '600' },
                 padding: 10,
                 displayColors: false,
+                filter: (item) => item.parsed.y != null,
                 callbacks: {
-                  label: (c) => '$' + c.parsed.y.toFixed(2),
+                  label: (c) => {
+                    if (c.datasetIndex === 1) {
+                      const m = buyMeta[c.dataIndex];
+                      if (m) return 'BUY ' + m.shares.toFixed(4) + ' @ $' + c.parsed.y.toFixed(2);
+                    }
+                    if (c.datasetIndex === 2) {
+                      const m = sellMeta[c.dataIndex];
+                      if (m) return 'SELL ' + m.shares.toFixed(4) + ' @ $' + c.parsed.y.toFixed(2);
+                    }
+                    return '$' + c.parsed.y.toFixed(2);
+                  },
                 }
               }
             },

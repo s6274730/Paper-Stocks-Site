@@ -115,8 +115,10 @@ def search():
     wallet.ensure_wallet(session["user_id"])
     w = wallet.get_wallet(session["user_id"])
     shares_owned = 0.0
+    transactions = []
     if result:
         shares_owned = wallet.get_shares(session["user_id"], result["ticker"])
+        transactions = wallet.get_transactions(session["user_id"], result["ticker"])
     return render_template(
         "search.html",
         name=session.get("user_name"),
@@ -127,6 +129,7 @@ def search():
         error=error,
         balance=w["balance_usd"] if w else 0.0,
         shares_owned=shares_owned,
+        transactions=transactions,
     )
 
 
