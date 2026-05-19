@@ -94,7 +94,9 @@ def search():
         return redirect(url_for("login"))
 
     ticker = request.args.get("ticker", "").strip()
+    period = request.args.get("period", "1y").strip()
     result = None
+    history = None
     error = None
 
     if ticker:
@@ -102,6 +104,11 @@ def search():
             result = stocks.get_price(ticker)
             if result is None:
                 error = f"No price found for '{ticker.upper()}'."
+            else:
+                try:
+                    history = stocks.get_history(ticker, period=period)
+                except Exception:
+                    history = None
         except Exception as e:
             error = f"Lookup failed: {e}"
 
@@ -112,6 +119,8 @@ def search():
         name=session.get("user_name"),
         ticker=ticker,
         result=result,
+        history=history,
+        period=period,
         error=error,
         balance=w["balance_usd"] if w else 0.0,
     )

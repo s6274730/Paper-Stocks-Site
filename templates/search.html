@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #0a1020;
@@ -194,6 +195,51 @@
     color: var(--ink-dim); font-size: 13px; margin-top: 22px;
   }
 
+  .chart-wrap {
+    margin-top: 24px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+  .chart-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 14px;
+  }
+  .chart-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px; font-weight: 600;
+    color: var(--ink-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .period-tabs { display: flex; gap: 6px; }
+  .period-tabs a {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 500;
+    color: var(--ink-dim);
+    text-decoration: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    transition: all 0.2s;
+  }
+  .period-tabs a:hover { color: var(--ink); border-color: rgba(138, 148, 173, 0.35); }
+  .period-tabs a.active {
+    color: var(--accent);
+    border-color: rgba(37, 185, 95, 0.4);
+    background: rgba(37, 185, 95, 0.08);
+  }
+  .chart-box {
+    position: relative;
+    height: 260px;
+    width: 100%;
+  }
+  .chart-empty {
+    color: var(--ink-dim);
+    font-size: 13px;
+    text-align: center;
+    padding: 30px 0;
+  }
+
   @media (max-width: 640px) {
     nav { padding: 18px 20px; }
     main { padding: 40px 20px; }
@@ -245,6 +291,23 @@
         <span class="price">{{ "%.2f"|format(result.price) }}</span><span class="currency">{{ result.currency }}</span>
       </div>
 
+      <div class="chart-wrap">
+        <div class="chart-header">
+          <span class="chart-title">Price history</span>
+          <div class="period-tabs">
+            {% for p, label in [('1mo','1M'),('3mo','3M'),('6mo','6M'),('1y','1Y'),('5y','5Y')] %}
+              <a href="{{ url_for('search', ticker=result.ticker, period=p) }}"
+                 class="{% if period == p %}active{% endif %}">{{ label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+        {% if history %}
+          <div class="chart-box"><canvas id="priceChart"></canvas></div>
+        {% else %}
+          <div class="chart-empty">No history available.</div>
+        {% endif %}
+      </div>
+
       <div class="buy-label">Buy {{ result.ticker }} — enter USD amount</div>
       <form class="buy-form" method="POST" action="{{ url_for('buy') }}">
         <input type="hidden" name="ticker" value="{{ result.ticker }}">
@@ -252,6 +315,87 @@
         <button type="submit">Buy</button>
       </form>
     </div>
+
+    {% if history %}
+    <script>
+      (function () {
+        const labels = {{ history.labels | tojson }};
+        const closes = {{ history.closes | tojson }};
+        const ctx = document.getElementById('priceChart').getContext('2d');
+        const first = closes[0];
+        const last = closes[closes.length - 1];
+        const up = last >= first;
+        const color = up ? '#25b95f' : '#ff6b6b';
+        const fill = up ? 'rgba(37, 185, 95, 0.12)' : 'rgba(255, 107, 107, 0.12)';
+
+        const gradient = ctx.createLinearGradient(0, 0, 0, 260);
+        gradient.addColorStop(0, fill);
+        gradient.addColorStop(1, 'rgba(10, 16, 32, 0)');
+
+        new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              data: closes,
+              borderColor: color,
+              backgroundColor: gradient,
+              borderWidth: 2,
+              fill: true,
+              tension: 0.25,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: color,
+              pointHoverBorderColor: '#0a1020',
+              pointHoverBorderWidth: 2,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(10, 16, 32, 0.95)',
+                borderColor: 'rgba(138, 148, 173, 0.2)',
+                borderWidth: 1,
+                titleColor: '#8a94ad',
+                bodyColor: '#e8ecf5',
+                titleFont: { family: 'JetBrains Mono', size: 11 },
+                bodyFont: { family: 'JetBrains Mono', size: 13, weight: '600' },
+                padding: 10,
+                displayColors: false,
+                callbacks: {
+                  label: (c) => '$' + c.parsed.y.toFixed(2),
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: {
+                  color: '#8a94ad',
+                  font: { family: 'JetBrains Mono', size: 10 },
+                  maxTicksLimit: 6,
+                  autoSkip: true,
+                }
+              },
+              y: {
+                position: 'right',
+                grid: { color: 'rgba(138, 148, 173, 0.08)' },
+                ticks: {
+                  color: '#8a94ad',
+                  font: { family: 'JetBrains Mono', size: 10 },
+                  callback: (v) => '$' + v.toFixed(0),
+                }
+              }
+            }
+          }
+        });
+      })();
+    </script>
+    {% endif %}
   {% elif error %}
     <div class="error">{{ error }}</div>
   {% endif %}
