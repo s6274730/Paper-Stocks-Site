@@ -161,11 +161,11 @@
     font-weight: 600; color: var(--accent);
   }
 
-  .buy-form {
-    margin-top: 22px;
+  .buy-form, .sell-form {
+    margin-top: 10px;
     display: flex; gap: 10px; align-items: center;
   }
-  .buy-form input {
+  .buy-form input, .sell-form input {
     flex: 1;
     background: rgba(10, 16, 32, 0.6);
     border: 1px solid var(--line);
@@ -176,23 +176,37 @@
     outline: none;
     transition: border-color 0.2s, box-shadow 0.2s;
   }
-  .buy-form input:focus {
+  .buy-form input:focus, .sell-form input:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(37, 185, 95, 0.1);
   }
-  .buy-form button {
+  .buy-form button, .sell-form button {
     padding: 0 22px; height: 44px;
     background: var(--accent); color: var(--bg);
     border: none; border-radius: 4px;
     font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
     cursor: pointer; transition: all 0.25s ease;
   }
-  .buy-form button:hover {
+  .sell-form button {
+    background: var(--danger); color: #fff;
+  }
+  .buy-form button:hover, .sell-form button:hover {
     box-shadow: 0 0 24px var(--accent-glow);
     transform: translateY(-1px);
   }
+  .sell-form button:hover {
+    box-shadow: 0 0 24px rgba(255, 107, 107, 0.25);
+  }
   .buy-label {
     color: var(--ink-dim); font-size: 13px; margin-top: 22px;
+  }
+  .owned-line {
+    color: var(--ink-dim); font-size: 13px;
+    margin-top: 18px; padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .owned-line .owned-val {
+    color: var(--ink); font-family: 'JetBrains Mono', monospace; font-weight: 600;
   }
 
   .chart-wrap {
@@ -314,6 +328,25 @@
         <input type="number" name="amount" step="0.01" min="0.01" placeholder="USD amount" required>
         <button type="submit">Buy</button>
       </form>
+
+      {% if shares_owned and shares_owned > 0 %}
+      <div class="owned-line">
+        You own <span class="owned-val">{{ "%.6f"|format(shares_owned) }}</span> shares of {{ result.ticker }}.
+      </div>
+      <div class="buy-label">Sell {{ result.ticker }} — enter shares</div>
+      <form class="sell-form" method="POST" action="{{ url_for('sell') }}">
+        <input type="hidden" name="ticker" value="{{ result.ticker }}">
+        <input type="hidden" name="redirect_to" value="search">
+        <input type="number" name="shares" step="0.01" min="0.01" max="{{ shares_owned }}" placeholder="shares" required>
+        <button type="submit">Sell</button>
+      </form>
+      <form class="sell-form" method="POST" action="{{ url_for('sell') }}" style="margin-top: 8px;">
+        <input type="hidden" name="ticker" value="{{ result.ticker }}">
+        <input type="hidden" name="redirect_to" value="search">
+        <input type="hidden" name="shares" value="all">
+        <button type="submit" style="flex: 1;">Sell all ({{ "%.6f"|format(shares_owned) }})</button>
+      </form>
+      {% endif %}
     </div>
 
     {% if history %}

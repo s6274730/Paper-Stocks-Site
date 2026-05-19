@@ -35,6 +35,21 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                ticker TEXT NOT NULL,
+                side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+                shares REAL NOT NULL,
+                price REAL NOT NULL,
+                usd_amount REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+        )
 
 
 def create_wallet(user_id):
@@ -126,5 +141,88 @@ def buy(user_id, ticker, usd_amount, price):
                 "VALUES (?, ?, ?, ?)",
                 (user_id, ticker, shares, usd_amount),
             )
+        conn.execute(
+            "INSERT INTO transactions (user_id, ticker, side, shares, price, usd_amount) "
+            "VALUES (?, ?, 'BUY', ?, ?, ?)",
+            (user_id, ticker, shares, price, usd_amount),
+        )
 
     return True, f"Bought {shares:.6f} shares of {ticker} at ${price:,.2f} for ${usd_amount:,.2f}."
+
+
+def get_shares(user_id, ticker):
+    ticker = ticker.strip().upper()
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT shares FROM holdings WHERE user_id = ? AND ticker = ?",
+            (user_id, ticker),
+        ).fetchone()
+    return float(row["shares"]) if row else 0.0
+
+
+def sell(user_id, ticker, shares_to_sell, price):
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return False, "Ticker required."
+    if shares_to_sell <= 0:
+        return False, "Shares must be positive."
+    if price <= 0:
+        return False, "Invalid price."
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT shares, cost_basis_usd FROM holdings WHERE user_id = ? AND ticker = ?",
+            (user_id, ticker),
+        ).fetchone()
+        if row is None or float(row["shares"]) <= 0:
+            return False, f"No {ticker} shares to sell."
+        held = float(row["shares"])
+        cost_basis = float(row["cost_basis_usd"])
+        if shares_to_sell > held + 1e-9:
+            return False, f"Only {held:.6f} shares available."
+        if shares_to_sell > held:
+            shares_to_sell = held
+
+        proceeds = shares_to_sell * price
+        basis_removed = cost_basis * (shares_to_sell / held) if held > 0 else 0.0
+        remaining_shares = held - shares_to_sell
+        remaining_basis = cost_basis - basis_removed
+        if remaining_shares < 1e-9:
+            remaining_shares = 0.0
+            remaining_basis = 0.0
+
+        conn.execute(
+            "UPDATE wallets SET balance_usd = balance_usd + ? WHERE user_id = ?",
+            (proceeds, user_id),
+        )
+        conn.execute(
+            "UPDATE holdings SET shares = ?, cost_basis_usd = ? "
+            "WHERE user_id = ? AND ticker = ?",
+            (remaining_shares, remaining_basis, user_id, ticker),
+        )
+        conn.execute(
+            "INSERT INTO transactions (user_id, ticker, side, shares, price, usd_amount) "
+            "VALUES (?, ?, 'SELL', ?, ?, ?)",
+            (user_id, ticker, shares_to_sell, price, proceeds),
+        )
+
+    return True, f"Sold {shares_to_sell:.6f} shares of {ticker} at ${price:,.2f} for ${proceeds:,.2f}."
+
+
+def get_transactions(user_id, ticker=None):
+    with get_db() as conn:
+        if ticker:
+            rows = conn.execute(
+                "SELECT ticker, side, shares, price, usd_amount, created_at "
+                "FROM transactions WHERE user_id = ? AND ticker = ? "
+                "ORDER BY created_at DESC, id DESC",
+                (user_id, ticker.strip().upper()),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT ticker, side, shares, price, usd_amount, created_at "
+                "FROM transactions WHERE user_id = ? "
+                "ORDER BY created_at DESC, id DESC",
+                (user_id,),
+            ).fetchall()
+    return [dict(r) for r in rows]

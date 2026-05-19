@@ -133,6 +133,46 @@
   }
   .empty a { color: var(--accent); text-decoration: none; font-weight: 600; }
 
+  .sell-row {
+    display: flex; gap: 6px; align-items: center;
+    justify-content: flex-end;
+  }
+  .sell-row input[type="number"] {
+    width: 100px;
+    background: rgba(10, 16, 32, 0.6);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 6px 8px; border-radius: 4px;
+    outline: none;
+    text-align: right;
+  }
+  .sell-row input[type="number"]:focus {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.15);
+  }
+  .sell-row button {
+    padding: 6px 12px;
+    background: var(--danger); color: #fff;
+    border: none; border-radius: 4px;
+    font-family: 'Inter', sans-serif; font-weight: 600; font-size: 12px;
+    cursor: pointer; transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .sell-row button:hover {
+    box-shadow: 0 0 16px rgba(255, 107, 107, 0.3);
+  }
+  .sell-row button.all {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid rgba(255, 107, 107, 0.4);
+  }
+  .sell-row button.all:hover {
+    background: rgba(255, 107, 107, 0.08);
+    box-shadow: none;
+  }
+
   @media (max-width: 640px) {
     nav { padding: 18px 20px; }
     main { padding: 40px 20px; }
@@ -190,6 +230,7 @@
           <th class="num">Cost basis</th>
           <th class="num">Current price</th>
           <th class="num">Market value</th>
+          <th class="num">Sell</th>
         </tr>
       </thead>
       <tbody>
@@ -201,6 +242,22 @@
           <td class="num">${{ "{:,.2f}".format(h.cost_basis_usd) }}</td>
           <td class="num">{% if h.current_price %}${{ "{:,.2f}".format(h.current_price) }}{% else %}—{% endif %}</td>
           <td class="num">{% if h.market_value %}${{ "{:,.2f}".format(h.market_value) }}{% else %}—{% endif %}</td>
+          <td class="num">
+            <div class="sell-row">
+              <form class="sell-row" method="POST" action="{{ url_for('sell') }}" style="display: inline-flex;">
+                <input type="hidden" name="ticker" value="{{ h.ticker }}">
+                <input type="hidden" name="redirect_to" value="wallet">
+                <input type="number" name="shares" step="0.01" min="0.01" max="{{ h.shares }}" placeholder="shares" required>
+                <button type="submit">Sell</button>
+              </form>
+              <form method="POST" action="{{ url_for('sell') }}" style="display: inline-flex;">
+                <input type="hidden" name="ticker" value="{{ h.ticker }}">
+                <input type="hidden" name="redirect_to" value="wallet">
+                <input type="hidden" name="shares" value="all">
+                <button type="submit" class="all">All</button>
+              </form>
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

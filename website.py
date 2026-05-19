@@ -114,6 +114,9 @@ def search():
 
     wallet.ensure_wallet(session["user_id"])
     w = wallet.get_wallet(session["user_id"])
+    shares_owned = 0.0
+    if result:
+        shares_owned = wallet.get_shares(session["user_id"], result["ticker"])
     return render_template(
         "search.html",
         name=session.get("user_name"),
@@ -123,6 +126,7 @@ def search():
         period=period,
         error=error,
         balance=w["balance_usd"] if w else 0.0,
+        shares_owned=shares_owned,
     )
 
 
@@ -154,6 +158,44 @@ def buy():
     ok, msg = wallet.buy(session["user_id"], ticker, amount, price_info["price"])
     flash(msg)
     return redirect(url_for("wallet_page") if ok else url_for("search", ticker=ticker))
+
+
+@app.route("/sell", methods=["POST"])
+def sell():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    ticker = request.form.get("ticker", "").strip()
+    shares_raw = request.form.get("shares", "").strip()
+    redirect_to = request.form.get("redirect_to", "wallet")
+
+    def back():
+        if redirect_to == "search":
+            return redirect(url_for("search", ticker=ticker))
+        return redirect(url_for("wallet_page"))
+
+    if shares_raw.lower() == "all":
+        shares = wallet.get_shares(session["user_id"], ticker)
+    else:
+        try:
+            shares = float(shares_raw)
+        except ValueError:
+            flash("Enter a valid share amount.")
+            return back()
+
+    try:
+        price_info = stocks.get_price(ticker)
+    except Exception as e:
+        flash(f"Price lookup failed: {e}")
+        return back()
+
+    if price_info is None:
+        flash(f"No price for '{ticker.upper()}'.")
+        return back()
+
+    ok, msg = wallet.sell(session["user_id"], ticker, shares, price_info["price"])
+    flash(msg)
+    return back()
 
 
 @app.route("/wallet")
