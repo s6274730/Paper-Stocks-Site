@@ -1,11 +1,89 @@
 import hashlib
+import json
 import os
 import secrets
+import socket as sock
 import sqlite3
+import threading
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from smtp import Mailer
 from stocks import StockService
 from wallet import WalletService
+
+ADMIN_PORT = 5001
+
+active_users = {}  # user_id -> {id, name, email}
+
+
+def _handle_admin_client(conn):
+    f = conn.makefile("rwb")
+    try:
+        while True:
+            line = f.readline()
+            if not line:
+                break
+            try:
+                req = json.loads(line.decode("utf-8"))
+            except Exception:
+                f.write((json.dumps({"ok": False, "error": "bad json"}) + "\n").encode("utf-8"))
+                f.flush()
+                continue
+
+            cmd = req.get("cmd", "")
+
+            if cmd == "LIST":
+                users = sorted(active_users.values(), key=lambda u: u["id"])
+                resp = {"ok": True, "users": users}
+
+            elif cmd == "WALLET":
+                uid = req.get("user_id")
+                w = wallet_service.get_wallet(uid)
+                if w is None:
+                    resp = {"ok": False, "error": f"User {uid} has no wallet."}
+                else:
+                    holdings = wallet_service.get_holdings(uid)
+                    resp = {"ok": True, "balance_usd": w["balance_usd"], "holdings": holdings}
+
+            elif cmd == "ADD":
+                uid = req.get("user_id")
+                amount = req.get("amount", 0)
+                with users_repo.get_db() as db:
+                    row = db.execute("SELECT id FROM users WHERE id = ?", (uid,)).fetchone()
+                    if row is None:
+                        resp = {"ok": False, "error": f"User {uid} not found."}
+                    else:
+                        wallet_service.ensure_wallet(uid)
+                        db.execute(
+                            "UPDATE wallets SET balance_usd = balance_usd + ? WHERE user_id = ?",
+                            (amount, uid),
+                        )
+                        resp = {"ok": True, "message": f"Added ${amount:,.2f} to user {uid}."}
+
+            elif cmd == "QUIT":
+                f.write((json.dumps({"ok": True, "message": "bye"}) + "\n").encode("utf-8"))
+                f.flush()
+                break
+
+            else:
+                resp = {"ok": False, "error": f"Unknown command: {cmd}"}
+
+            f.write((json.dumps(resp) + "\n").encode("utf-8"))
+            f.flush()
+    except Exception:
+        pass
+    finally:
+        f.close()
+        conn.close()
+
+
+def _run_admin_server():
+    srv = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
+    srv.setsockopt(sock.SOL_SOCKET, sock.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", ADMIN_PORT))
+    srv.listen(5)
+    while True:
+        conn, _ = srv.accept()
+        threading.Thread(target=_handle_admin_client, args=(conn,), daemon=True).start()
 
 
 class UserRepository:
@@ -115,6 +193,9 @@ def login():
 
         session["user_id"] = user["id"]
         session["user_name"] = user["name"]
+        with users_repo.get_db() as db:
+            row = db.execute("SELECT email FROM users WHERE id = ?", (user["id"],)).fetchone()
+        active_users[user["id"]] = {"id": user["id"], "name": user["name"], "email": row["email"]}
         return redirect(url_for("home"))
 
     return render_template("login.html")
@@ -122,6 +203,7 @@ def login():
 
 @app.route("/logout")
 def logout():
+    active_users.pop(session.get("user_id"), None)
     session.clear()
     return redirect(url_for("index"))
 
@@ -321,4 +403,6 @@ def verify(token):
 if __name__ == "__main__":
     users_repo.init_db()
     wallet_service.init_db()
-    app.run(debug=True)
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        threading.Thread(target=_run_admin_server, daemon=True).start()
+    app.run(debug=True, host="0.0.0.0")

@@ -107,11 +107,11 @@ def main():
             print("Incorrect password.")
         entered_pass = hashlib.sha256(input("Enter admin password: ").encode()).hexdigest() #הסיסמה הוא password1
     host = input("Host: (leave blank for 127.0.0.1): ")
-    port = input("Port: (leave blank for 5000): ")
+    port = input("Port: (leave blank for 5001): ")
     if host == "":
         host = "127.0.0.1"
     if port == "":
-        port = 5000
+        port = 5001
 
     try:
         s = socket.create_connection((host, port), timeout=10)
