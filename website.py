@@ -5,7 +5,8 @@ import secrets
 import socket as sock
 import sqlite3
 import threading
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from aichat import AIChatService
 from smtp import Mailer
 from stocks import StockService
 from wallet import WalletService
@@ -164,6 +165,7 @@ users_repo = UserRepository(DB_PATH)
 wallet_service = WalletService(DB_PATH)
 stock_service = StockService()
 mailer = Mailer()
+ai_service = AIChatService()
 
 
 @app.route("/")
@@ -359,6 +361,47 @@ def wallet_page():
         holdings=enriched,
         total_value=total_value,
     )
+
+
+@app.route("/chat")
+def chat():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    return render_template(
+        "chat.html",
+        name=session.get("user_name"),
+        history=session.get("chat_history", []),
+    )
+
+
+@app.route("/chat/send", methods=["POST"])
+def chat_send():
+    if "user_id" not in session:
+        return jsonify({"error": "Not logged in."}), 401
+
+    message = (request.get_json(silent=True) or {}).get("message", "").strip()
+    if not message:
+        return jsonify({"error": "Empty message."}), 400
+
+    history = session.get("chat_history", [])
+    history.append({"role": "user", "content": message})
+
+    try:
+        reply = ai_service.reply(history)
+    except Exception as e:
+        history.pop()
+        session["chat_history"] = history
+        return jsonify({"error": f"AI request failed: {e}"}), 502
+
+    history.append({"role": "assistant", "content": reply})
+    session["chat_history"] = history
+    return jsonify({"reply": reply})
+
+
+@app.route("/chat/reset", methods=["POST"])
+def chat_reset():
+    session.pop("chat_history", None)
+    return jsonify({"ok": True})
 
 
 @app.route("/signup", methods=["GET", "POST"])
