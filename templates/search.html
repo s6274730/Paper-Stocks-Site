@@ -305,10 +305,10 @@
   {% endwith %}
 
   <h1>Look up a stock</h1>
-  <p class="lede">Enter a ticker symbol to see its current price.</p>
+  <p class="lede">Search by company name or ticker — start typing for suggestions.</p>
 
   <form class="search-form" method="GET" action="{{ url_for('search') }}">
-    <input type="text" name="ticker" value="{{ ticker or '' }}" placeholder="e.g. AAPL, MSFT, TSLA" autocomplete="off" autofocus required>
+    <input type="text" name="ticker" value="{{ ticker or '' }}" placeholder="e.g. Tesla, Apple, MSFT" autocomplete="off" autofocus required data-autocomplete>
     <button type="submit">Search</button>
   </form>
 
@@ -525,5 +525,7 @@
     <div class="error">{{ error }}</div>
   {% endif %}
 </main>
+
+<script src="{{ url_for('static', filename='autocomplete.js') }}"></script>
 </body>
 </html>

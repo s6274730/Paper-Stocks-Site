@@ -28,6 +28,32 @@ class StockService:
             "currency": info.get("currency") or "USD",
         }
 
+    def search_symbols(self, query, limit=8):
+        query = query.strip()
+        if not query:
+            return []
+        try:
+            quotes = yf.Search(query, max_results=limit * 2).quotes
+        except Exception:
+            return []
+        results = []
+        seen = set()
+        for q in quotes:
+            symbol = q.get("symbol")
+            if not symbol or symbol in seen:
+                continue
+            if q.get("quoteType") not in ("EQUITY", "ETF", "CRYPTOCURRENCY", "INDEX"):
+                continue
+            seen.add(symbol)
+            results.append({
+                "symbol": symbol,
+                "name": q.get("longname") or q.get("shortname") or symbol,
+                "exchange": q.get("exchDisp") or q.get("exchange") or "",
+            })
+            if len(results) >= limit:
+                break
+        return results
+
     def get_history(self, ticker, period="1y"):
         ticker = ticker.strip().upper()
         if not ticker:

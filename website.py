@@ -262,6 +262,16 @@ def search():
     )
 
 
+@app.route("/api/suggest")
+def suggest():
+    if "user_id" not in session:
+        return jsonify([]), 401
+    query = request.args.get("q", "").strip()
+    if len(query) < 1:
+        return jsonify([])
+    return jsonify(stock_service.search_symbols(query))
+
+
 @app.route("/buy", methods=["POST"])
 def buy():
     if "user_id" not in session:
