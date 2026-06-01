@@ -3,6 +3,13 @@ import socket
 import sys
 import hashlib
 
+ADMIN_PASSWORD_HASH = "0b14d501a594442a01c6859541bcb3e8164d183d32937b851835442f69d5c94e"  # password1
+
+
+def check_admin_password(password):
+    return hashlib.sha256(password.encode()).hexdigest() == ADMIN_PASSWORD_HASH
+
+
 def send(sock_file, payload):
     sock_file.write((json.dumps(payload) + "\n").encode("utf-8"))
     sock_file.flush()
@@ -101,11 +108,8 @@ def menu_loop(f):
 
 
 def main():
-    entered_pass = ""
-    while entered_pass!="0b14d501a594442a01c6859541bcb3e8164d183d32937b851835442f69d5c94e":
-        if entered_pass!="":
-            print("Incorrect password.")
-        entered_pass = hashlib.sha256(input("Enter admin password: ").encode()).hexdigest() #הסיסמה הוא password1
+    while not check_admin_password(input("Enter admin password: ")):  # הסיסמה הוא password1
+        print("Incorrect password.")
     host = input("Host: (leave blank for 127.0.0.1): ")
     port = input("Port: (leave blank for 5001): ")
     if host == "":
