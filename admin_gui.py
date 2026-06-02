@@ -1,11 +1,3 @@
-"""Tkinter desktop UI for the casino admin tool.
-
-Same idea as the admin.py CLI: log in with the admin password, connect to the
-admin socket server (run by website.py on port 5001), then list active users and
-act on them. Reuses admin.py's password check and wire protocol.
-
-Run website.py first, then:  python admin_gui.py
-"""
 
 import socket
 import tkinter as tk
