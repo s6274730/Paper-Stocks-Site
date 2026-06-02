@@ -13,6 +13,7 @@ from tkinter import ttk, messagebox, simpledialog
 from datetime import datetime
 
 from admin import send, check_admin_password
+from crypto_channel import SecureChannel
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5001
@@ -29,8 +30,10 @@ class AdminGUI(tk.Tk):
 
         self.sock = None
         self.f = None
+        self.chan = None
         self._refresh_job = None
         self._users = []          # rows aligned with the listbox
+        self._search_mode = False  # showing search results instead of live active list
 
         self.container = ttk.Frame(self, padding=16)
         self.container.pack(fill="both", expand=True)
@@ -44,11 +47,12 @@ class AdminGUI(tk.Tk):
             child.destroy()
 
     def _close_socket(self):
-        if self.f is not None:
+        if self.chan is not None:
             try:
-                send(self.f, {"cmd": "QUIT"})
+                send(self.chan, {"cmd": "QUIT"})
             except Exception:
                 pass
+        if self.f is not None:
             try:
                 self.f.close()
             except Exception:
@@ -58,6 +62,7 @@ class AdminGUI(tk.Tk):
                 self.sock.close()
             except Exception:
                 pass
+        self.chan = None
         self.f = None
         self.sock = None
 
@@ -117,6 +122,13 @@ class AdminGUI(tk.Tk):
             self.login_status.config(text=f"Connect failed: {exc}", foreground="red")
             return
 
+        try:
+            self.chan = SecureChannel.client_handshake(self.f)
+        except Exception as exc:
+            self._close_socket()
+            self.login_status.config(text=f"Secure handshake failed: {exc}", foreground="red")
+            return
+
         self._build_dashboard()
 
     # ---------- dashboard screen ----------
@@ -126,9 +138,21 @@ class AdminGUI(tk.Tk):
 
         header = ttk.Frame(self.container)
         header.pack(fill="x")
-        ttk.Label(header, text="Active Users",
-                  font=("Segoe UI", 14, "bold")).pack(side="left")
+        self.list_title = ttk.Label(header, text="Active Users",
+                                    font=("Segoe UI", 14, "bold"))
+        self.list_title.pack(side="left")
         ttk.Button(header, text="Log Out", command=self._logout).pack(side="right")
+
+        search = ttk.Frame(self.container)
+        search.pack(fill="x", pady=(10, 0))
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(search, textvariable=self.search_var)
+        search_entry.pack(side="left", fill="x", expand=True)
+        search_entry.bind("<Return>", lambda e: self._do_search())
+        ttk.Button(search, text="Search", command=self._do_search).pack(
+            side="left", padx=(4, 0))
+        ttk.Button(search, text="Active", command=self._show_active).pack(
+            side="left", padx=(4, 0))
 
         list_frame = ttk.Frame(self.container)
         list_frame.pack(fill="both", expand=True, pady=(10, 6))
@@ -159,8 +183,12 @@ class AdminGUI(tk.Tk):
         return self._users[sel[0]]
 
     def _refresh_users(self):
+        if self._search_mode:
+            # paused while viewing search results; check back later
+            self._refresh_job = self.after(REFRESH_MS, self._refresh_users)
+            return
         try:
-            resp = send(self.f, {"cmd": "LIST"})
+            resp = send(self.chan, {"cmd": "LIST"})
         except Exception as exc:
             self.status.config(text=f"Disconnected: {exc}", foreground="red")
             messagebox.showerror("Connection lost", f"{exc}\n\nReturning to login.")
@@ -194,13 +222,49 @@ class AdminGUI(tk.Tk):
 
         self._refresh_job = self.after(REFRESH_MS, self._refresh_users)
 
+    # ---------- search ----------
+    def _do_search(self):
+        query = self.search_var.get().strip()
+        if not query:
+            self._show_active()
+            return
+        try:
+            resp = send(self.chan, {"cmd": "SEARCH", "query": query})
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+        if resp is None or not resp.get("ok"):
+            messagebox.showwarning("Search", (resp or {}).get("error", "Search failed."))
+            return
+
+        self._search_mode = True
+        self.list_title.config(text=f"Search: {query}")
+        users = resp.get("users", [])
+        self._users = users
+        self.user_list.delete(0, tk.END)
+        for u in users:
+            status = "online" if u.get("online") else "offline"
+            self.user_list.insert(tk.END, f"[{u['id']}] {u['name']} <{u['email']}> ({status})")
+        n = len(users)
+        self.status.config(
+            text=f"{n} match{'es' if n != 1 else ''} for '{query}'", foreground="gray")
+
+    def _show_active(self):
+        self.search_var.set("")
+        self._search_mode = False
+        self.list_title.config(text="Active Users")
+        if self._refresh_job is not None:
+            self.after_cancel(self._refresh_job)
+            self._refresh_job = None
+        self._refresh_users()
+
     # ---------- actions ----------
     def _view_wallet(self):
         user = self._selected_user()
         if not user:
             return
         try:
-            resp = send(self.f, {"cmd": "WALLET", "user_id": user["id"]})
+            resp = send(self.chan, {"cmd": "WALLET", "user_id": user["id"]})
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
             return
@@ -231,7 +295,7 @@ class AdminGUI(tk.Tk):
         if amount is None:
             return
         try:
-            resp = send(self.f, {"cmd": "ADD", "user_id": user["id"], "amount": amount})
+            resp = send(self.chan, {"cmd": "ADD", "user_id": user["id"], "amount": amount})
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
             return

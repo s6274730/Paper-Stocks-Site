@@ -1,7 +1,8 @@
-import json
 import socket
 import sys
 import hashlib
+
+from crypto_channel import SecureChannel
 
 ADMIN_PASSWORD_HASH = "0b14d501a594442a01c6859541bcb3e8164d183d32937b851835442f69d5c94e"  # password1
 
@@ -10,16 +11,15 @@ def check_admin_password(password):
     return hashlib.sha256(password.encode()).hexdigest() == ADMIN_PASSWORD_HASH
 
 
-def send(sock_file, payload):
-    sock_file.write((json.dumps(payload) + "\n").encode("utf-8"))
-    sock_file.flush()
-    line = sock_file.readline()
-    if not line:
-        raise ConnectionError("Server closed connection.")
+def send(chan, payload):
+    chan.send_json(payload)
     try:
-        return json.loads(line.decode("utf-8"))
-    except:
+        resp = chan.recv_json()
+    except Exception:
         return None
+    if resp is None:
+        raise ConnectionError("Server closed connection.")
+    return resp
 
 
 def cmd_list(f):
@@ -34,6 +34,22 @@ def cmd_list(f):
     print(f"Active users ({len(users)}):")
     for u in users:
         print(f"  [{u['id']}] {u['name']} <{u['email']}>")
+    return users
+
+
+def cmd_search(f, query):
+    resp = send(f, {"cmd": "SEARCH", "query": query})
+    if not resp.get("ok"):
+        print(f"Error: {resp.get('error')}")
+        return []
+    users = resp.get("users", [])
+    if not users:
+        print("No matching users.")
+        return []
+    print(f"Matches ({len(users)}):")
+    for u in users:
+        status = "online" if u.get("online") else "offline"
+        print(f"  [{u['id']}] {u['name']} <{u['email']}> ({status})")
     return users
 
 
@@ -75,31 +91,35 @@ def prompt_float(label):
         return None
 
 
-def menu_loop(f):
+def menu_loop(chan):
     while True:
         print()
         print("1) List active users")
-        print("2) View wallet")
-        print("3) Add funds")
-        print("4) Quit")
+        print("2) Search users by username")
+        print("3) View wallet")
+        print("4) Add funds")
+        print("5) Quit")
         choice = input("> ").strip()
         if choice == "1":
-            cmd_list(f)
+            cmd_list(chan)
         elif choice == "2":
+            q = input("username: ").strip()
+            cmd_search(chan, q)
+        elif choice == "3":
             uid = prompt_int("user_id: ")
             if uid is not None:
-                cmd_wallet(f, uid)
-        elif choice == "3":
+                cmd_wallet(chan, uid)
+        elif choice == "4":
             uid = prompt_int("user_id: ")
             if uid is None:
                 continue
             amt = prompt_float("amount USD: ")
             if amt is None:
                 continue
-            cmd_add(f, uid, amt)
-        elif choice == "4":
+            cmd_add(chan, uid, amt)
+        elif choice == "5":
             try:
-                send(f, {"cmd": "QUIT"})
+                send(chan, {"cmd": "QUIT"})
             except Exception:
                 pass
             return
@@ -127,7 +147,14 @@ def main():
     with s:
         f = s.makefile("rwb")
         try:
-            menu_loop(f)
+            chan = SecureChannel.client_handshake(f)
+        except Exception as e:
+            print(f"Secure handshake failed: {e}")
+            f.close()
+            sys.exit(1)
+        print("Secure channel established (RSA key exchange + AES-256-GCM).")
+        try:
+            menu_loop(chan)
         except (KeyboardInterrupt, EOFError):
             print()
         finally:

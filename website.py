@@ -1,40 +1,127 @@
+import datetime
 import hashlib
+import ipaddress
 import json
 import os
 import secrets
 import socket as sock
 import sqlite3
 import threading
+import time
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+from cryptography.x509.oid import NameOID
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from crypto_channel import SecureChannel, generate_rsa_keypair
 from aichat import AIChatService
 from smtp import Mailer
 from stocks import StockService
 from wallet import WalletService
 
-ADMIN_PORT = 5001
+CERT_FILE = os.path.join(os.path.dirname(__file__), "cert.pem")
+KEY_FILE  = os.path.join(os.path.dirname(__file__), "key.pem")
 
-active_users = {}  # user_id -> {id, name, email}
+ADMIN_PORT = 5001
+_admin_rsa_key = None  # RSA private key for the admin channel, set when the server starts
+
+def _ensure_tls_cert():
+    if os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE):
+        return
+    key = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
+        .add_extension(
+            x509.SubjectAlternativeName([
+                x509.DNSName("localhost"),
+                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+            ]),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256())
+    )
+    with open(CERT_FILE, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+    with open(KEY_FILE, "wb") as f:
+        f.write(key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ))
+
+
+active_users = {}  # user_id -> {id, name, email, last_seen}
+_active_lock = threading.Lock()
+ACTIVE_TIMEOUT = 15  # seconds without a heartbeat before a user drops off the list
+
+
+def _touch_active(user):
+    with _active_lock:
+        active_users[user["id"]] = {**user, "last_seen": time.time()}
+
+
+def _prune_active_users():
+    cutoff = time.time() - ACTIVE_TIMEOUT
+    with _active_lock:
+        stale = [uid for uid, u in active_users.items() if u["last_seen"] < cutoff]
+        for uid in stale:
+            active_users.pop(uid, None)
 
 
 def _handle_admin_client(conn):
     f = conn.makefile("rwb")
     try:
+        try:
+            chan = SecureChannel.server_handshake(f, _admin_rsa_key)
+        except Exception:
+            return
         while True:
-            line = f.readline()
-            if not line:
-                break
             try:
-                req = json.loads(line.decode("utf-8"))
+                req = chan.recv_json()
             except Exception:
-                f.write((json.dumps({"ok": False, "error": "bad json"}) + "\n").encode("utf-8"))
-                f.flush()
+                # decrypt/parse failure on a frame: report and keep the session
+                chan.send_json({"ok": False, "error": "bad request"})
                 continue
+            if req is None:
+                break
 
             cmd = req.get("cmd", "")
 
             if cmd == "LIST":
-                users = sorted(active_users.values(), key=lambda u: u["id"])
+                _prune_active_users()
+                with _active_lock:
+                    users = sorted(
+                        ({"id": u["id"], "name": u["name"], "email": u["email"]}
+                         for u in active_users.values()),
+                        key=lambda u: u["id"],
+                    )
                 resp = {"ok": True, "users": users}
+
+            elif cmd == "SEARCH":
+                q = (req.get("query") or "").strip()
+                if not q:
+                    resp = {"ok": True, "users": []}
+                else:
+                    with users_repo.get_db() as db:
+                        rows = db.execute(
+                            "SELECT id, name, email FROM users WHERE name LIKE ? ORDER BY name LIMIT 50",
+                            (f"%{q}%",),
+                        ).fetchall()
+                    _prune_active_users()
+                    with _active_lock:
+                        online = set(active_users.keys())
+                    resp = {"ok": True, "users": [
+                        {"id": r["id"], "name": r["name"], "email": r["email"],
+                         "online": r["id"] in online}
+                        for r in rows
+                    ]}
 
             elif cmd == "WALLET":
                 uid = req.get("user_id")
@@ -61,15 +148,13 @@ def _handle_admin_client(conn):
                         resp = {"ok": True, "message": f"Added ${amount:,.2f} to user {uid}."}
 
             elif cmd == "QUIT":
-                f.write((json.dumps({"ok": True, "message": "bye"}) + "\n").encode("utf-8"))
-                f.flush()
+                chan.send_json({"ok": True, "message": "bye"})
                 break
 
             else:
                 resp = {"ok": False, "error": f"Unknown command: {cmd}"}
 
-            f.write((json.dumps(resp) + "\n").encode("utf-8"))
-            f.flush()
+            chan.send_json(resp)
     except Exception:
         pass
     finally:
@@ -78,9 +163,11 @@ def _handle_admin_client(conn):
 
 
 def _run_admin_server():
+    global _admin_rsa_key
+    _admin_rsa_key = generate_rsa_keypair()
     srv = sock.socket(sock.AF_INET, sock.SOCK_STREAM)
     srv.setsockopt(sock.SOL_SOCKET, sock.SO_REUSEADDR, 1)
-    srv.bind(("127.0.0.1", ADMIN_PORT))
+    srv.bind(("0.0.0.0", ADMIN_PORT))
     srv.listen(5)
     while True:
         conn, _ = srv.accept()
@@ -197,7 +284,8 @@ def login():
         session["user_name"] = user["name"]
         with users_repo.get_db() as db:
             row = db.execute("SELECT email FROM users WHERE id = ?", (user["id"],)).fetchone()
-        active_users[user["id"]] = {"id": user["id"], "name": user["name"], "email": row["email"]}
+        session["user_email"] = row["email"]
+        _touch_active({"id": user["id"], "name": user["name"], "email": row["email"]})
         return redirect(url_for("home"))
 
     return render_template("login.html")
@@ -205,9 +293,23 @@ def login():
 
 @app.route("/logout")
 def logout():
-    active_users.pop(session.get("user_id"), None)
+    with _active_lock:
+        active_users.pop(session.get("user_id"), None)
     session.clear()
     return redirect(url_for("index"))
+
+
+@app.route("/heartbeat", methods=["POST"])
+def heartbeat():
+    uid = session.get("user_id")
+    if uid is None:
+        return ("", 401)
+    _touch_active({
+        "id": uid,
+        "name": session.get("user_name"),
+        "email": session.get("user_email"),
+    })
+    return ("", 204)
 
 
 @app.route("/home")
@@ -454,8 +556,9 @@ def verify(token):
 
 
 if __name__ == "__main__":
+    _ensure_tls_cert()
     users_repo.init_db()
     wallet_service.init_db()
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         threading.Thread(target=_run_admin_server, daemon=True).start()
-    app.run(debug=True, host="0.0.0.0")
+    app.run(debug=True, host="0.0.0.0", ssl_context=(CERT_FILE, KEY_FILE), threaded=True)
