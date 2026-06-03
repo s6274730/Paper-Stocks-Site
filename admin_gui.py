@@ -283,7 +283,7 @@ class AdminGUI(tk.Tk):
             return
         amount = simpledialog.askfloat(
             "Add Funds", f"Amount (USD) to add to {user['name']}:",
-            parent=self, minvalue=0.01)
+            parent=self)
         if amount is None:
             return
         try:
