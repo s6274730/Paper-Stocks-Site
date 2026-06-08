@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from datetime import datetime
 
-from admin import send, check_admin_password
+from admin import send
 from crypto_channel import SecureChannel
 
 DEFAULT_HOST = "127.0.0.1"
@@ -17,15 +17,16 @@ class AdminGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Casino Admin")
-        self.geometry("460x520")
-        self.minsize(420, 460)
+        self.geometry("460x560")
+        self.minsize(420, 480)
 
         self.sock = None
         self.f = None
         self.chan = None
         self._refresh_job = None
-        self._users = []          # rows aligned with the listbox
-        self._search_mode = False  # showing search results instead of live active list
+        self._users = []
+        self._search_mode = False
+        self._admin_status = None  # "Admin" or "Owner"
 
         self.container = ttk.Frame(self, padding=16)
         self.container.pack(fill="both", expand=True)
@@ -69,30 +70,37 @@ class AdminGUI(tk.Tk):
         form = ttk.Frame(self.container)
         form.pack()
 
-        ttk.Label(form, text="Password:").grid(row=0, column=0, sticky="e", padx=4, pady=6)
+        ttk.Label(form, text="Username:").grid(row=0, column=0, sticky="e", padx=4, pady=6)
+        self.user_var = tk.StringVar()
+        user_entry = ttk.Entry(form, textvariable=self.user_var, width=26)
+        user_entry.grid(row=0, column=1, pady=6)
+
+        ttk.Label(form, text="Password:").grid(row=1, column=0, sticky="e", padx=4, pady=6)
         self.pass_var = tk.StringVar()
         pwd = ttk.Entry(form, textvariable=self.pass_var, width=26, show="*")
-        pwd.grid(row=0, column=1, pady=6)
+        pwd.grid(row=1, column=1, pady=6)
 
-        ttk.Label(form, text="Host:").grid(row=1, column=0, sticky="e", padx=4, pady=6)
+        ttk.Label(form, text="Host:").grid(row=2, column=0, sticky="e", padx=4, pady=6)
         self.host_var = tk.StringVar(value=DEFAULT_HOST)
-        ttk.Entry(form, textvariable=self.host_var, width=26).grid(row=1, column=1, pady=6)
+        ttk.Entry(form, textvariable=self.host_var, width=26).grid(row=2, column=1, pady=6)
 
-        ttk.Label(form, text="Port:").grid(row=2, column=0, sticky="e", padx=4, pady=6)
+        ttk.Label(form, text="Port:").grid(row=3, column=0, sticky="e", padx=4, pady=6)
         self.port_var = tk.StringVar(value=str(DEFAULT_PORT))
-        ttk.Entry(form, textvariable=self.port_var, width=26).grid(row=2, column=1, pady=6)
+        ttk.Entry(form, textvariable=self.port_var, width=26).grid(row=3, column=1, pady=6)
 
         ttk.Button(self.container, text="Log In", command=self._do_login).pack(pady=16)
         pwd.bind("<Return>", lambda e: self._do_login())
-        pwd.focus_set()
+        user_entry.focus_set()
 
         self.login_status = ttk.Label(self.container, text="", foreground="red")
         self.login_status.pack()
 
     def _do_login(self):
-        # same login logic as admin.py: SHA-256 password check
-        if not check_admin_password(self.pass_var.get()):
-            self.login_status.config(text="Incorrect password.")
+        username = self.user_var.get().strip()
+        password = self.pass_var.get()
+
+        if not username:
+            self.login_status.config(text="Username required.")
             return
 
         host = self.host_var.get().strip() or DEFAULT_HOST
@@ -121,12 +129,27 @@ class AdminGUI(tk.Tk):
             self.login_status.config(text=f"Secure handshake failed: {exc}", foreground="red")
             return
 
+        try:
+            resp = send(self.chan, {"cmd": "AUTH", "username": username, "password": password})
+        except Exception as exc:
+            self._close_socket()
+            self.login_status.config(text=f"Auth error: {exc}", foreground="red")
+            return
+
+        if resp is None or not resp.get("ok"):
+            self._close_socket()
+            self.login_status.config(
+                text=(resp or {}).get("error", "Authentication failed."), foreground="red"
+            )
+            return
+
+        self._admin_status = resp.get("status")
         self._build_dashboard()
 
     # ---------- dashboard screen ----------
     def _build_dashboard(self):
         self._clear()
-        self.title("Casino Admin - Dashboard")
+        self.title(f"Casino Admin - Dashboard [{self._admin_status}]")
 
         header = ttk.Frame(self.container)
         header.pack(fill="x")
@@ -162,6 +185,10 @@ class AdminGUI(tk.Tk):
         ttk.Button(actions, text="Add Funds", command=self._add_funds).pack(
             side="left", expand=True, fill="x", padx=(4, 0))
 
+        if self._admin_status == "Owner":
+            ttk.Button(actions, text="Change Status", command=self._change_status).pack(
+                side="left", expand=True, fill="x", padx=(4, 0))
+
         self.status = ttk.Label(self.container, text="", foreground="gray")
         self.status.pack(anchor="w", pady=(6, 0))
 
@@ -176,7 +203,6 @@ class AdminGUI(tk.Tk):
 
     def _refresh_users(self):
         if self._search_mode:
-            # paused while viewing search results; check back later
             self._refresh_job = self.after(REFRESH_MS, self._refresh_users)
             return
         try:
@@ -235,8 +261,11 @@ class AdminGUI(tk.Tk):
         self._users = users
         self.user_list.delete(0, tk.END)
         for u in users:
-            status = "online" if u.get("online") else "offline"
-            self.user_list.insert(tk.END, f"[{u['id']}] {u['name']} <{u['email']}> ({status})")
+            online = "online" if u.get("online") else "offline"
+            user_status = u.get("status", "User")
+            self.user_list.insert(
+                tk.END, f"[{u['id']}] {u['name']} <{u['email']}> ({online}) [{user_status}]"
+            )
         n = len(users)
         self.status.config(
             text=f"{n} match{'es' if n != 1 else ''} for '{query}'", foreground="gray")
@@ -296,6 +325,44 @@ class AdminGUI(tk.Tk):
             return
         messagebox.showinfo("Add Funds", resp.get("message", "Done."))
 
+    def _change_status(self):
+        user = self._selected_user()
+        if not user:
+            return
+        current = user.get("status", "User")
+        if current == "Owner":
+            messagebox.showwarning("Change Status", "Cannot change Owner status.")
+            return
+
+        win = tk.Toplevel(self)
+        win.title(f"Change Status - {user['name']}")
+        win.resizable(False, False)
+        win.grab_set()
+
+        ttk.Label(win, text=f"User: {user['name']}", font=("Segoe UI", 11)).pack(pady=(12, 4), padx=16)
+        ttk.Label(win, text=f"Current status: {current}").pack(padx=16)
+
+        choice_var = tk.StringVar(value=current)
+        frame = ttk.Frame(win, padding=12)
+        frame.pack()
+        ttk.Radiobutton(frame, text="User", variable=choice_var, value="User").pack(anchor="w")
+        ttk.Radiobutton(frame, text="Admin", variable=choice_var, value="Admin").pack(anchor="w")
+
+        def _apply():
+            new_status = choice_var.get()
+            try:
+                resp = send(self.chan, {"cmd": "SET_STATUS", "user_id": user["id"], "status": new_status})
+            except Exception as exc:
+                messagebox.showerror("Error", str(exc), parent=win)
+                return
+            if resp is None or not resp.get("ok"):
+                messagebox.showwarning("Change Status", (resp or {}).get("error", "Failed."), parent=win)
+                return
+            messagebox.showinfo("Change Status", resp.get("message", "Done."), parent=win)
+            win.destroy()
+
+        ttk.Button(win, text="Apply", command=_apply).pack(pady=(0, 12))
+
     # ---------- logout / close ----------
     def _logout(self):
         if self._refresh_job is not None:
@@ -303,6 +370,7 @@ class AdminGUI(tk.Tk):
             self._refresh_job = None
         self._close_socket()
         self._users = []
+        self._admin_status = None
         self._build_login()
 
     def _on_close(self):

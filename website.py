@@ -82,11 +82,13 @@ def _handle_admin_client(conn):
             chan = SecureChannel.server_handshake(f, _admin_rsa_key)
         except Exception:
             return
+
+        admin_status = None  # None = not authenticated
+
         while True:
             try:
                 req = chan.recv_json()
             except Exception:
-                # decrypt/parse failure on a frame: report and keep the session
                 chan.send_json({"ok": False, "error": "bad request"})
                 continue
             if req is None:
@@ -94,7 +96,26 @@ def _handle_admin_client(conn):
 
             cmd = req.get("cmd", "")
 
-            if cmd == "LIST":
+            if cmd == "AUTH":
+                username = (req.get("username") or "").strip()
+                password = req.get("password", "")
+                with users_repo.get_db() as db:
+                    row = db.execute(
+                        "SELECT id, password_hash, salt, status FROM users WHERE name = ?",
+                        (username,),
+                    ).fetchone()
+                if row is None or UserRepository.hash_password(password, bytes.fromhex(row["salt"])) != row["password_hash"]:
+                    resp = {"ok": False, "error": "Invalid username or password."}
+                elif row["status"] not in ("Admin", "Owner"):
+                    resp = {"ok": False, "error": "Not an admin account."}
+                else:
+                    admin_status = row["status"]
+                    resp = {"ok": True, "status": admin_status}
+
+            elif admin_status is None:
+                resp = {"ok": False, "error": "Not authenticated."}
+
+            elif cmd == "LIST":
                 _prune_active_users()
                 with _active_lock:
                     users = sorted(
@@ -111,7 +132,7 @@ def _handle_admin_client(conn):
                 else:
                     with users_repo.get_db() as db:
                         rows = db.execute(
-                            "SELECT id, name, email FROM users WHERE name LIKE ? ORDER BY name LIMIT 50",
+                            "SELECT id, name, email, status FROM users WHERE name LIKE ? ORDER BY name LIMIT 50",
                             (f"%{q}%",),
                         ).fetchall()
                     _prune_active_users()
@@ -119,7 +140,7 @@ def _handle_admin_client(conn):
                         online = set(active_users.keys())
                     resp = {"ok": True, "users": [
                         {"id": r["id"], "name": r["name"], "email": r["email"],
-                         "online": r["id"] in online}
+                         "status": r["status"], "online": r["id"] in online}
                         for r in rows
                     ]}
 
@@ -146,6 +167,29 @@ def _handle_admin_client(conn):
                             (amount, uid),
                         )
                         resp = {"ok": True, "message": f"Added ${amount:,.2f} to user {uid}."}
+
+            elif cmd == "SET_STATUS":
+                if admin_status != "Owner":
+                    resp = {"ok": False, "error": "Only Owners can change user status."}
+                else:
+                    uid = req.get("user_id")
+                    new_status = req.get("status")
+                    if new_status not in ("User", "Admin"):
+                        resp = {"ok": False, "error": "Status must be 'User' or 'Admin'."}
+                    else:
+                        with users_repo.get_db() as db:
+                            row = db.execute(
+                                "SELECT id, status FROM users WHERE id = ?", (uid,)
+                            ).fetchone()
+                            if row is None:
+                                resp = {"ok": False, "error": f"User {uid} not found."}
+                            elif row["status"] == "Owner":
+                                resp = {"ok": False, "error": "Cannot change Owner status."}
+                            else:
+                                db.execute(
+                                    "UPDATE users SET status = ? WHERE id = ?", (new_status, uid)
+                                )
+                                resp = {"ok": True, "message": f"User {uid} status set to {new_status}."}
 
             elif cmd == "QUIT":
                 chan.send_json({"ok": True, "message": "bye"})
@@ -195,10 +239,16 @@ class UserRepository:
                     salt TEXT NOT NULL,
                     birthdate TEXT NOT NULL,
                     is_verified INTEGER NOT NULL DEFAULT 0,
-                    verification_token TEXT
+                    verification_token TEXT,
+                    status TEXT NOT NULL DEFAULT 'User'
                 )
                 """
             )
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'User'")
+            except sqlite3.OperationalError:
+                pass
+            conn.execute("UPDATE users SET status = 'Owner' WHERE name = 'titangamer334'")
 
     @staticmethod
     def hash_password(password, salt):

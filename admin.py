@@ -1,14 +1,7 @@
 import socket
 import sys
-import hashlib
 
 from crypto_channel import SecureChannel
-
-ADMIN_PASSWORD_HASH = "0b14d501a594442a01c6859541bcb3e8164d183d32937b851835442f69d5c94e"  # password1
-
-
-def check_admin_password(password):
-    return hashlib.sha256(password.encode()).hexdigest() == ADMIN_PASSWORD_HASH
 
 
 def send(chan, payload):
@@ -20,6 +13,13 @@ def send(chan, payload):
     if resp is None:
         raise ConnectionError("Server closed connection.")
     return resp
+
+
+def cmd_auth(chan, username, password):
+    resp = send(chan, {"cmd": "AUTH", "username": username, "password": password})
+    if resp is None or not resp.get("ok"):
+        return None
+    return resp.get("status")
 
 
 def cmd_list(f):
@@ -49,7 +49,7 @@ def cmd_search(f, query):
     print(f"Matches ({len(users)}):")
     for u in users:
         status = "online" if u.get("online") else "offline"
-        print(f"  [{u['id']}] {u['name']} <{u['email']}> ({status})")
+        print(f"  [{u['id']}] {u['name']} <{u['email']}> ({status}) [{u.get('status', 'User')}]")
     return users
 
 
@@ -73,6 +73,11 @@ def cmd_add(f, uid, amount):
     print(resp.get("message") or resp.get("error") or resp)
 
 
+def cmd_set_status(f, uid, new_status):
+    resp = send(f, {"cmd": "SET_STATUS", "user_id": uid, "status": new_status})
+    print(resp.get("message") or resp.get("error") or resp)
+
+
 def prompt_int(label):
     raw = input(label).strip()
     try:
@@ -91,14 +96,18 @@ def prompt_float(label):
         return None
 
 
-def menu_loop(chan):
+def menu_loop(chan, admin_status):
     while True:
         print()
         print("1) List active users")
         print("2) Search users by username")
         print("3) View wallet")
         print("4) Add funds")
-        print("5) Quit")
+        if admin_status == "Owner":
+            print("5) Change user status")
+            print("6) Quit")
+        else:
+            print("5) Quit")
         choice = input("> ").strip()
         if choice == "1":
             cmd_list(chan)
@@ -117,7 +126,16 @@ def menu_loop(chan):
             if amt is None:
                 continue
             cmd_add(chan, uid, amt)
-        elif choice == "5":
+        elif choice == "5" and admin_status == "Owner":
+            uid = prompt_int("user_id: ")
+            if uid is None:
+                continue
+            new_status = input("new status (User/Admin): ").strip()
+            if new_status not in ("User", "Admin"):
+                print("Must be 'User' or 'Admin'.")
+                continue
+            cmd_set_status(chan, uid, new_status)
+        elif (choice == "6" and admin_status == "Owner") or (choice == "5" and admin_status != "Owner"):
             try:
                 send(chan, {"cmd": "QUIT"})
             except Exception:
@@ -128,8 +146,8 @@ def menu_loop(chan):
 
 
 def main():
-    while not check_admin_password(input("Enter admin password: ")):  # הסיסמה הוא password1
-        print("Incorrect password.")
+    username = input("Username: ").strip()
+    password = input("Enter admin password: ")
     host = input("Host: (leave blank for 127.0.0.1): ")
     port = input("Port: (leave blank for 5001): ")
     if host == "":
@@ -153,8 +171,16 @@ def main():
             f.close()
             sys.exit(1)
         print("Secure channel established (RSA key exchange + AES-256-GCM).")
+
+        admin_status = cmd_auth(chan, username, password)
+        if admin_status is None:
+            print("Authentication failed.")
+            f.close()
+            sys.exit(1)
+        print(f"Logged in as {username} ({admin_status}).")
+
         try:
-            menu_loop(chan)
+            menu_loop(chan, admin_status)
         except (KeyboardInterrupt, EOFError):
             print()
         finally:
