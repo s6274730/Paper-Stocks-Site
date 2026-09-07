@@ -1,5 +1,7 @@
 from groq import Groq
-
+# NOTE: The API key string below is an inactive, revoked placeholder 
+# included for demonstration purposes. To run and test the AI chatbot locally, 
+# replace this string with your own active Groq API key.
 API_KEY = "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"
 MODEL = "llama-3.3-70b-versatile"
 
